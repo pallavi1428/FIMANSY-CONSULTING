@@ -8,6 +8,21 @@ const complianceObligationSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // ✅ Add these fields to match what the engine generates
+    category_tag: {
+      type: String,
+      enum: ['gst', 'tds', 'income_tax', 'payroll', 'mca'],
+      required: true,
+    },
+    subtag: {
+      type: String,
+      trim: true,
+    },
+    description: {
+      type: String,
+      trim: true,
+    },
+    // Keep your existing fields but make them optional
     compliance_type: {
       type: String,
       enum: [
@@ -18,12 +33,12 @@ const complianceObligationSchema = new mongoose.Schema(
         'gst',
         'tds',
       ],
-      required: true,
+      // Remove required: true
     },
     form_name: {
       type: String,
-      required: true,
       trim: true,
+      // Remove required: true
     },
     form_description: {
       type: String,
@@ -53,65 +68,35 @@ const complianceObligationSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    assessment_year: {
-      type: String,
-      trim: true,
-    },
-    trigger_event: {
-      type: String,
-      trim: true,
-    },
-    trigger_date: {
-      type: Date,
-    },
-    filing_fee: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    late_fee: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    srn_number: {
-      type: String,
-      trim: true,
-    },
-    acknowledgement_number: {
-      type: String,
-      trim: true,
-    },
-    notes: {
-      type: String,
-      trim: true,
-    },
-    documents: [{
-      type: String, // Array of document URLs or references
-      trim: true,
-    }],
-    priority: {
-      type: Number,
-      min: 1,
-      max: 5,
-      default: 5,
-      index: true,
-    },
-    // Additional fields
+    // Engine fields
     is_recurring: {
       type: Boolean,
       default: false,
     },
+    recurrence_type: {
+      type: String,
+      enum: ['monthly', 'quarterly', 'annual', 'one_time'],
+    },
+    recurrence_config: {
+      type: mongoose.Schema.Types.Mixed,
+    },
+    // Keep your other fields...
+    assessment_year: String,
+    trigger_event: String,
+    trigger_date: Date,
+    filing_fee: { type: Number, default: 0 },
+    late_fee: { type: Number, default: 0 },
+    srn_number: String,
+    acknowledgement_number: String,
+    notes: String,
+    documents: [String],
+    priority: { type: Number, min: 1, max: 5, default: 5 },
     parent_obligation_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ComplianceObligation",
     },
-    reminder_sent_at: [{
-      type: Date,
-    }],
-    completed_at: {
-      type: Date,
-    },
+    reminder_sent_at: [Date],
+    completed_at: Date,
   },
   {
     timestamps: {
@@ -121,10 +106,11 @@ const complianceObligationSchema = new mongoose.Schema(
   }
 );
 
-// Compound indexes for common queries
+// Compound indexes
 complianceObligationSchema.index({ organization_id: 1, status: 1 });
 complianceObligationSchema.index({ organization_id: 1, due_date: 1 });
 complianceObligationSchema.index({ organization_id: 1, compliance_type: 1 });
+complianceObligationSchema.index({ organization_id: 1, category_tag: 1 }); // Add this
 
 export const ComplianceObligation = mongoose.model(
   "ComplianceObligation",

@@ -36,42 +36,36 @@ const getMissingFields = (profile) => {
 };
 
 // Create company compliance profile
-// Create company compliance profile
 export const createCompanyProfile = asynchandler(async (req, res) => {
-  console.log("req.user:", req.user?._id);
-  console.log("req.params:", req.params);
-  
-  const { organization_id } = req.params;
-  const body = req.body;
+  const { organization_id } = req.body;
 
-  // DON'T convert to ObjectId manually - mongoose handles this
-  // Just use the string directly
+  if (!organization_id) {
+    throw new ApiError(400, "organization_id is required");
+  }
+
   const org = await Organization.findOne({
     _id: organization_id,
-    owner: req.user._id  // req.user._id is already an ObjectId from the database
+    owner: req.user._id
   });
 
-  console.log("Found organization:", org ? "Yes" : "No");
-
   if (!org) {
-    console.log("Organization not found or access denied");
     throw new ApiError(404, "Organization not found or access denied");
   }
 
   const existingProfile = await CompanyComplianceProfile.findOne({ 
-    organization_id: organization_id 
+    organization_id 
   });
-  
+
   if (existingProfile) {
     throw new ApiError(400, "Profile already exists");
   }
 
   const profile = await CompanyComplianceProfile.create({
-    organization_id: organization_id,  // Use the string directly
-    ...body,
-    financial_year_end: body.financial_year_end || 3,
-    authorized_capital: body.authorized_capital || 0,
-    paid_up_capital: body.paid_up_capital || 0,
+    organization_id,
+    ...req.body,
+    financial_year_end: req.body.financial_year_end || 3,
+    authorized_capital: req.body.authorized_capital || 0,
+    paid_up_capital: req.body.paid_up_capital || 0,
     mca_status: "active",
     is_audit_applicable: false,
   });
@@ -80,23 +74,66 @@ export const createCompanyProfile = asynchandler(async (req, res) => {
 });
 
 // Get company profile
-export const getCompanyProfile = asynchandler(async (req, res) => {
-  const profile = await fetchProfile(req.params.organization_id);
-  if (!profile) throw new ApiError(404, "Compliance profile not found");
+export const getCompanyProfile = async (req, res) => {
+  try {
+    const { organization_id } = req.query;
 
-  res.json(new ApiResponse(200, profile, "Profile fetched successfully"));
-});
+    if (!organization_id) {
+      return res.status(400).json({
+        success: false,
+        message: "organization_id is required"
+      });
+    }
+
+    const profile = await CompanyComplianceProfile.findOne({
+      organization_id
+    });
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: "Profile not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      data: profile
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
 
 // Update company profile
 export const updateCompanyProfile = asynchandler(async (req, res) => {
-  const profile = await CompanyComplianceProfile.findOneAndUpdate(
-    { organization_id: req.params.organization_id },
-    req.body,
-    { new: true, runValidators: true }
-  );
+  try {
+    console.log('📥 Updating profile with ID:', req.params.id);
+    console.log('📦 Update data:', req.body);
 
-  if (!profile) throw new ApiError(404, "Compliance profile not found");
-  res.json(new ApiResponse(200, profile, "Profile updated successfully"));
+    // ✅ FIXED: Use findByIdAndUpdate with req.params.id
+    const profile = await CompanyComplianceProfile.findByIdAndUpdate(
+      req.params.id,  // This is the MongoDB _id from the URL
+      req.body,
+      { new: true, runValidators: true }
+    );
+
+    if (!profile) {
+      console.log('❌ Profile not found with ID:', req.params.id);
+      throw new ApiError(404, "Compliance profile not found");
+    }
+    
+    console.log('✅ Profile updated successfully:', profile._id);
+    res.json(new ApiResponse(200, profile, "Profile updated successfully"));
+  } catch (error) {
+    console.error('❌ Error updating profile:', error);
+    throw error;
+  }
 });
 
 // Onboarding status

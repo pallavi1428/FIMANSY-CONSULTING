@@ -1,5 +1,4 @@
 import express from "express";
-
 import { getAllTemplates } from "../scripts/seedComplianceTemplates.js";
 import { protectRoute } from "../middlewares/authMiddleware.js";
 import { 
@@ -9,34 +8,52 @@ import {
   getOnboardingStatus 
 } from "../controllers/compliance/complianceOnboarding.controller.js";
 
+import { getDirectors, createDirector, updateDirector, deleteDirector} from "../controllers/compliance/complianceDirectors.controller.js";
 import { 
-  generateFY, 
-  getCalendarObligations, 
+  getEvents,
+  createEvent,
+  updateEvent,
+  acknowledgeEvent,
+  deleteEvent
+} from "../controllers/compliance/complianceEvents.controller.js";
+
+import {
+  getObligations,
   updateObligationStatus,
-  deleteFYObligations,
-  getDashboardSummary 
+  deleteObligation,
+  generateFY,
+  getDashboardSummary
 } from "../controllers/compliance/complianceCalendar.controller.js";
 
 const complianceRoutes = express.Router();
 
 complianceRoutes.get("/", getAllTemplates);
-
-//complianceRoutes.post("/generate-fy", generateFY);
+complianceRoutes.post("/generate-fy", generateFY);
 //complianceRoutes.get("/calendar", getCalendarObligations);
 //complianceRoutes.get("/dashboard-summary", getDashboardSummary);
 //complianceRoutes.post("/complete", markCompleted);
 //complianceRoutes.post("/ignore", ignoreObligation);
 
-complianceRoutes.post("/organization/:organization_id/generate-fy", generateFY);
-complianceRoutes.get("/organization/:organization_id/calendar", getCalendarObligations);
-complianceRoutes.get("/organization/:organization_id/dashboard-summary", getDashboardSummary);
-complianceRoutes.delete("/organization/:organization_id/fy/:financialYear", deleteFYObligations);
-complianceRoutes.patch("/obligation/:obligation_id", updateObligationStatus);
+complianceRoutes.post("/profile", protectRoute, createCompanyProfile);
+complianceRoutes.get("/profile", protectRoute, getCompanyProfile);
+complianceRoutes.patch("/profile/:id", protectRoute, updateCompanyProfile);
+complianceRoutes.get("/profile/onboarding-status", protectRoute, getOnboardingStatus);
 
-// Apply protectRoute to ensure req.user exists
-complianceRoutes.post("/organization/:organization_id/profile", protectRoute, createCompanyProfile); // create
-complianceRoutes.get("/organization/:organization_id/profile", protectRoute, getCompanyProfile); // read
-complianceRoutes.put("/organization/:organization_id/profile", protectRoute, updateCompanyProfile); // update
-complianceRoutes.get("/organization/:organization_id/onboarding-status", protectRoute, getOnboardingStatus); // onboarding status
+complianceRoutes.get("/obligations", getObligations);
+complianceRoutes.patch("/obligations/:id", updateObligationStatus);
+complianceRoutes.delete("/obligations/:id", deleteObligation);
+complianceRoutes.post("/generate-fy", generateFY);
+complianceRoutes.get("/dashboard-summary", getDashboardSummary);
+
+complianceRoutes.get("/directors", getDirectors); 
+complianceRoutes.post("/directors", createDirector);
+complianceRoutes.patch("/directors/:id", updateDirector); 
+complianceRoutes.delete("/directors/:id", deleteDirector);
+
+complianceRoutes.get("/events", getEvents);                    
+complianceRoutes.post("/events", createEvent);                
+complianceRoutes.patch("/events/:id", updateEvent);           
+complianceRoutes.patch("/events/:id/acknowledge", acknowledgeEvent); 
+complianceRoutes.delete("/events/:id", deleteEvent); 
 
 export default complianceRoutes;

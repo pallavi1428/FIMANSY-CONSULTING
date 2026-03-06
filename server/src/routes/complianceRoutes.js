@@ -1,5 +1,5 @@
 import express from "express";
-import { getAllTemplates } from "../scripts/seedComplianceTemplates.js";
+import { getAllTemplates } from "../controllers/compliance/complianceTemplate.controller.js";
 import { protectRoute } from "../middlewares/authMiddleware.js";
 import { 
   createCompanyProfile, 

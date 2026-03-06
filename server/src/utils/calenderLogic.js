@@ -1,44 +1,74 @@
+/**
+ * Get financial year start and end dates
+ * Supports formats: "2025-26" or "2025-2026"
+ */
 function getFinancialYearDates(financialYear) {
-  // Input format: "2025-26"
-  const [startYear, endYearSuffix] = financialYear.split("-");
+  const [startYearStr, endYearStr] = financialYear.split("-");
+
+  const startYear = Number(startYearStr);
+
+  let endYear;
+  if (endYearStr.length === 2) {
+    // format: 2025-26
+    endYear = Number("20" + endYearStr);
+  } else {
+    // format: 2025-2026
+    endYear = Number(endYearStr);
+  }
+
+  // Set to start/end of day to avoid time comparison issues
+  const start = new Date(startYear, 3, 1); // April 1
+  start.setHours(0, 0, 0, 0);
   
-  // Fix: Convert properly
-  const start = new Date(parseInt(startYear), 3, 1); // April 1, 2025
-  
-  // Fix: endYearSuffix like "26" should become 2026, not 4026!
-  const endYear = 2000 + parseInt(endYearSuffix); // "26" → 2026
-  const end = new Date(endYear, 2, 31); // March 31, 2026
-  
-  console.log(`📅 FY Range: ${start.toISOString()} to ${end.toISOString()}`);
+  const end = new Date(endYear, 2, 31); // March 31
+  end.setHours(23, 59, 59, 999);
+
   return { start, end };
 }
 
+/**
+ * Build safe date that handles invalid dates (like Feb 30)
+ */
 function buildSafeDate(year, monthIndex, day) {
-  // Fix: Ensure year is a number
-  const date = new Date(Number(year), monthIndex, day);
+  // Create date and normalize to start of day
+  const date = new Date(year, monthIndex, day);
+  date.setHours(0, 0, 0, 0);
+  
+  // Check if date is valid (month didn't roll over)
   if (date.getMonth() !== monthIndex) {
-    return new Date(Number(year), monthIndex + 1, 0); // last day of month
+    // Invalid date - use last day of month
+    return new Date(year, monthIndex + 1, 0);
   }
   return date;
 }
 
+/**
+ * Generate monthly due dates with proper year handling
+ */
 function generateMonthlyDueDates(template, fyStart, fyEnd) {
   const dueDates = [];
-  const { due_day, offset_months } = template.recurrence_config || { due_day: 7, offset_months: 1 };
   
-  // Fix: Only generate for 12 months
-  let current = new Date(fyStart);
-  let monthCount = 0;
+  // Validate template has required config
+  if (!template.recurrence_config || !template.recurrence_config.due_day) {
+    console.warn(`⚠️ Template ${template.name} missing due_day in recurrence_config`);
+    return [];
+  }
+
+  const { due_day, offset_months = 0 } = template.recurrence_config;
   
-  while (current <= fyEnd && monthCount < 12) {
-    // Calculate due date
-    let dueYear = current.getFullYear();
-    let dueMonth = current.getMonth() + offset_months;
-    
-    if (dueMonth > 11) {
-      dueMonth = dueMonth - 12;
-      dueYear = dueYear + 1;
-    }
+  // Start from first month of FY
+  let currentYear = fyStart.getFullYear();
+  let currentMonth = fyStart.getMonth(); // April = 3
+  
+  // Maximum 12 months in a FY
+  const MAX_ITERATIONS = 12;
+  let iterations = 0;
+  
+  while (iterations < MAX_ITERATIONS) {
+    // Calculate due date with offset
+    const totalMonths = currentMonth + offset_months;
+    const dueYear = currentYear + Math.floor(totalMonths / 12);
+    const dueMonth = totalMonths % 12;
     
     const dueDate = buildSafeDate(dueYear, dueMonth, due_day);
     
@@ -48,62 +78,104 @@ function generateMonthlyDueDates(template, fyStart, fyEnd) {
     }
     
     // Move to next month
-    current.setMonth(current.getMonth() + 1);
-    monthCount++;
+    currentMonth++;
+    if (currentMonth > 11) {
+      currentMonth = 0;
+      currentYear++;
+    }
+    
+    iterations++;
+    
+    // Stop if we've gone past FY end
+    if (currentYear > fyEnd.getFullYear() || 
+        (currentYear === fyEnd.getFullYear() && currentMonth > fyEnd.getMonth())) {
+      break;
+    }
   }
   
-  console.log(`📆 Monthly template ${template.name}: ${dueDates.length} dates`);
+  console.log(`📅 Generated ${dueDates.length} monthly due dates for ${template.name}`);
   return dueDates;
 }
 
+/**
+ * Generate quarterly due dates
+ * Supports due_dates array in format ["DD-MM", "DD-MM", "DD-MM", "DD-MM"]
+ */
 function generateQuarterlyDueDates(template, fyStart, fyEnd) {
   const dueDates = [];
-  const { due_dates } = template.recurrence_config || { due_dates: ["31-07", "31-10", "31-01", "31-04"] };
   
-  // Fix: Only generate 4 quarters per FY
-  const quarters = [
-    { month: 6, day: 31 }, // Q1: July 31
-    { month: 9, day: 31 }, // Q2: Oct 31
-    { month: 0, day: 31 }, // Q3: Jan 31 (next year)
-    { month: 3, day: 30 }  // Q4: April 30 (next year)
-  ];
+  // Validate template has required config
+  if (!template.recurrence_config || !template.recurrence_config.due_dates) {
+    console.warn(`⚠️ Template ${template.name} missing due_dates in recurrence_config`);
+    return [];
+  }
+
+  const { due_dates, offset_months = 0 } = template.recurrence_config;
   
-  const startYear = fyStart.getFullYear();
+  // Map quarters to their ending months (0-indexed)
+  // Q1: March (2), Q2: June (5), Q3: September (8), Q4: December (11)
+  const quarterEndMonths = [2, 5, 8, 11];
   
-  quarters.forEach((quarter, index) => {
-    let year = startYear;
-    if (quarter.month < 4) {
-      year = startYear + 1; // Next year for Jan-Apr dates
+  for (let i = 0; i < quarterEndMonths.length; i++) {
+    const dueDateStr = due_dates[i];
+    if (!dueDateStr) continue;
+    
+    // Parse "DD-MM" format
+    const [day, month] = dueDateStr.split("-").map(Number);
+    
+    // Determine year based on month
+    let year = fyStart.getFullYear();
+    if (month < 4) { // Jan-Mar belongs to next calendar year
+      year = fyStart.getFullYear() + 1;
     }
     
-    const dueDate = buildSafeDate(year, quarter.month, quarter.day);
+    // Apply offset if any
+    const totalMonths = (month - 1) + (offset_months || 0);
+    const dueYear = year + Math.floor(totalMonths / 12);
+    const dueMonth = totalMonths % 12;
+    
+    const dueDate = buildSafeDate(dueYear, dueMonth, day);
     
     if (dueDate >= fyStart && dueDate <= fyEnd) {
       dueDates.push(dueDate);
     }
-  });
+  }
   
-  console.log(`📆 Quarterly template ${template.name}: ${dueDates.length} dates`);
+  console.log(`📅 Generated ${dueDates.length} quarterly due dates for ${template.name}`);
   return dueDates;
 }
 
+/**
+ * Generate annual due date
+ */
 function generateAnnualDueDate(template, fyStart, fyEnd) {
-  const { due_day, due_month } = template.recurrence_config || { due_day: 30, due_month: 9 };
+  // Validate template has required config
+  if (!template.recurrence_config || !template.recurrence_config.due_day || !template.recurrence_config.due_month) {
+    console.warn(`⚠️ Template ${template.name} missing due_day/due_month in recurrence_config`);
+    return [];
+  }
+
+  const { due_day, due_month, offset_months = 0 } = template.recurrence_config;
   
-  // Fix: Only generate ONE due date
+  // Determine base year
   let year = fyStart.getFullYear();
-  if (due_month < 4) {
-    year = year + 1; // If due month is Jan-Mar, it's in next year
+  if (due_month < 4) { // Jan-Mar belongs to next FY
+    year = fyStart.getFullYear() + 1;
   }
   
-  const dueDate = buildSafeDate(year, due_month - 1, due_day);
+  // Apply offset if any
+  const totalMonths = (due_month - 1) + offset_months;
+  const dueYear = year + Math.floor(totalMonths / 12);
+  const dueMonth = totalMonths % 12;
   
-  console.log(`📆 Annual template ${template.name}: ${dueDate.toISOString()}`);
+  const dueDate = buildSafeDate(dueYear, dueMonth, due_day);
   
   if (dueDate >= fyStart && dueDate <= fyEnd) {
+    console.log(`📅 Generated 1 annual due date for ${template.name}`);
     return [dueDate];
   }
   
+  console.log(`📅 No annual due date for ${template.name} in this FY range`);
   return [];
 }
 
